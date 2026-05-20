@@ -1,12 +1,14 @@
 const express = require('express');
 const fs = require('fs'); 
-const path = require('path'); // Módulo nativo necessário para gerenciar os caminhos dos arquivos
+const path = require('path');
 const app = express();
 
 const PORT = process.env.PORT || 8080;
-const HOST = '0.0.0.0'; // Permite conexões externas na nuvem
+const HOST = '0.0.0.0';
 
-// MAPEAMENTO ESTRATÉGICO: Diz ao Express para servir a sua Landing Page escura (index.html)
+// SISTEMA DE MEMÓRIA TEMPORÁRIA: Evita duplicar logs se o mesmo IP clicar várias vezes seguidas
+const ultimosAcessos = new Map();
+
 app.use(express.static(__dirname));
 
 app.get(/.*/, async (req, res) => {
@@ -15,44 +17,55 @@ app.get(/.*/, async (req, res) => {
         const ipLimpo = ipOriginal.split(',')[0].trim();
         const horario = new Date().toLocaleString('pt-BR');
         
-        // Verifica se o acesso é local (seu próprio teste)
+        // NOVIDADE: Identifica o dispositivo (iPhone, Android, Windows, Mac)
+        const userAgent = req.headers['user-agent'] || '';
+        let dispositivo = 'PC / Notebook';
+        if (userAgent.includes('iPhone')) dispositivo = 'iPhone';
+        else if (userAgent.includes('iPad')) dispositivo = 'iPad';
+        else if (userAgent.includes('Android')) dispositivo = 'Smartphone Android';
+
         const ehLocalhost = ipLimpo === '::1' || ipLimpo === '127.0.0.1' || ipLimpo.startsWith('192.168.');
 
         if (!ehLocalhost) {
-            // Esse bloco só executa se for um IP externo real (a isca)
-            let localizacaoStr = 'Não identificada';
-            let provedorStr = 'N/A';
+            const agora = Date.now();
+            const ultimoClique = ultimosAcessos.get(ipLimpo) || 0;
 
-            try {
-                const geoResponse = await fetch(`http://ip-api.com/json/${ipLimpo}`);
-                const geoData = await geoResponse.json();
-                if (geoData.status === 'success') {
-                    localizacaoStr = `${geoData.city}, ${geoData.regionName} - ${geoData.country}`;
-                    provedorStr = geoData.isp;
+            // Só grava no histórico se tiver passado mais de 5 minutos desde o último clique do mesmo IP
+            if (agora - ultimoClique > 5 * 60 * 1000) {
+                ultimosAcessos.set(ipLimpo, agora);
+
+                let localizacaoStr = 'Não identificada';
+                let provedorStr = 'N/A';
+
+                try {
+                    const geoResponse = await fetch(`http://ip-api.com/json/${ipLimpo}`);
+                    const geoData = await geoResponse.json();
+                    if (geoData.status === 'success') {
+                        localizacaoStr = `${geoData.city}, ${geoData.regionName} - ${geoData.country}`;
+                        provedorStr = geoData.isp;
+                    }
+                } catch (geoErr) {
+                    localizacaoStr = 'Erro na consulta de Geolocalização';
                 }
-            } catch (geoErr) {
-                localizacaoStr = 'Erro na consulta de Geolocalização';
+
+                // Salva no arquivo incluindo a nova métrica de dispositivo
+                const logTexto = `Data: ${horario} | IP: ${ipLimpo} | Disp: ${dispositivo} | Local: ${localizacaoStr} | Provedor: ${provedorStr}\n`;
+                fs.appendFile('historico.txt', logTexto, (err) => {
+                    if (err) console.error('Erro ao salvar no arquivo de log:', err);
+                });
+
+                // Alerta visual completo no terminal da Render
+                console.log(`\n🚨 [ALERTA DE ISCA] Novo lead capturado!`);
+                console.log(`📡 IP: ${ipLimpo}`);
+                console.log(`📱 Dispositivo: ${dispositivo}`);
+                console.log(`📍 Localização: ${localizacaoStr}`);
+                console.log(`🏢 Provedor: ${provedorStr}`);
+                console.log(`==================================================`);
             }
-
-            // Grava apenas dados de leads externos no arquivo historico.txt
-            const logTexto = `Data: ${horario} | IP: ${ipLimpo} | Rota: ${req.url} | Local: ${localizacaoStr} | Provedor: ${provedorStr}\n`;
-            fs.appendFile('historico.txt', logTexto, (err) => {
-                if (err) console.error('Erro ao salvar no arquivo de log:', err);
-            });
-
-            // Exibe o alerta no terminal de Logs da Render ou VS Code
-            console.log(`\n🚨 [ALERTA DE ISCA] Novo lead capturado!`);
-            console.log(`📡 IP: ${ipLimpo}`);
-            console.log(`📍 Localização: ${localizacaoStr}`);
-            console.log(`🏢 Provedor: ${provedorStr}`);
-            console.log(`==================================================`);
         } else {
-            // Apenas exibe no terminal local para validação interna
             console.log(`\n💻 [TESTE LOCAL] Redirecionamento executado para ambiente interno.`);
         }
 
-        // A CORREÇÃO: Em vez de redirecionar para uma URL externa ou para si mesmo,
-        // o servidor entrega fisicamente o arquivo index.html salvo na mesma pasta.
         res.sendFile(path.join(__dirname, 'index.html'));
 
     } catch (error) {
@@ -62,6 +75,5 @@ app.get(/.*/, async (req, res) => {
 });
 
 app.listen(PORT, HOST, () => {
-    console.log(`\n🚀 Roteador operando com sucesso em http://${HOST}:${PORT}`);
-    console.log(`Aguardando acessos externos das iscas...\n`);
+    console.log(`\n🚀 Roteador operando com sucesso em http://${HOST}:${PORT}\n`);
 });
