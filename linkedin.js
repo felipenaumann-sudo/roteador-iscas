@@ -1,17 +1,13 @@
 const express = require('express');
 const fs = require('fs'); 
-const path = require('path');
 const app = express();
 
-// Portas dinâmicas e hosts configurados para a nuvem da Render
+// Portas dinâmicas configuradas para a nuvem da Render
 const PORT = process.env.PORT || 8080;
 const HOST = '0.0.0.0'; 
 
-// AQUI ESTÁ A CORREÇÃO: Tira o Google e joga o lead para a sua Landing Page interna
-const URL_DESTINO = '/index.html'; 
-
-// Permite que o Express sirva os arquivos da pasta (como o index.html)
-app.use(express.static(__dirname));
+// INSIRA AQUI O LINK DA SUA ISCA (A página de vendas/artigo para onde o lead vai ser jogado)
+const URL_DESTINO = 'SUA_URL_DA_ISCA_AQUI'; 
 
 app.get(/.*/, async (req, res) => {
     try {
@@ -52,7 +48,7 @@ app.get(/.*/, async (req, res) => {
             console.log(`\n💻 [TESTE LOCAL] Redirecionamento executado para ambiente interno.`);
         }
 
-        // Executa o redirecionamento original para a URL_DESTINO corrigida
+        // Executa o redirecionamento original e invisível para a página da isca
         res.redirect(302, URL_DESTINO);
 
     } catch (error) {
